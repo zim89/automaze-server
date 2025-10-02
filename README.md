@@ -5,6 +5,7 @@ Backend API for task management application, built with NestJS using Prisma ORM 
 ## 🚀 Key Features
 
 - **RESTful API** for task and category management
+- **Statistics API** with server-side calculations
 - **CRUD Operations** for tasks and categories
 - **Data Validation** with class-validator
 - **Automatic API Documentation**
@@ -25,7 +26,6 @@ Backend API for task management application, built with NestJS using Prisma ORM 
 
 - **class-validator** - DTO validation
 - **class-transformer** - Object transformation
-- **class-transformer-validator** - Validation integration
 
 ### Development Tools
 
@@ -48,6 +48,10 @@ src/
 │   ├── categories.service.ts
 │   ├── categories.module.ts
 │   └── dto/               # Data Transfer Objects
+├── stats/                 # Statistics module
+│   ├── stats.controller.ts
+│   ├── stats.service.ts
+│   └── stats.module.ts
 └── tasks/                 # Tasks module
     ├── tasks.controller.ts
     ├── tasks.service.ts
@@ -59,23 +63,23 @@ src/
 
 ### Task
 
-- `id` - Unique identifier
-- `title` - Task title
-- `description` - Description (optional)
-- `priority` - Priority (1-10)
-- `isDone` - Completion status
+- `id` - Unique identifier (CUID)
+- `title` - Task title (required, trimmed)
+- `description` - Description (optional, trimmed)
+- `priority` - Priority (1-10, default: 5)
+- `isDone` - Completion status (default: false)
 - `dueDate` - Due date (optional)
-- `categoryId` - Category relationship
-- `createdAt` - Creation date
-- `updatedAt` - Update date
+- `categoryId` - Category relationship (optional)
+- `createdAt` - Creation timestamp
+- `updatedAt` - Last update timestamp
 
 ### Category
 
-- `id` - Unique identifier
-- `name` - Category name
+- `id` - Unique identifier (CUID)
+- `name` - Category name (unique)
 - `color` - Color for UI (optional)
-- `createdAt` - Creation date
-- `updatedAt` - Update date
+- `createdAt` - Creation timestamp
+- `updatedAt` - Last update timestamp
 
 ## 📦 Installation & Setup
 
@@ -98,6 +102,7 @@ bun install
 
 ```env
 DATABASE_URL="postgresql://username:password@localhost:5432/automaze"
+PORT=4040
 ```
 
 ### Run Migrations
@@ -118,7 +123,7 @@ bunx prisma generate
 bun run start:dev
 ```
 
-API will be available at [http://localhost:3001](http://localhost:3001)
+API will be available at [http://localhost:4040](http://localhost:4040)
 
 ### Production
 
@@ -131,7 +136,7 @@ bun run start:prod
 
 - `bun run build` - Build the project
 - `bun run start` - Start the application
-- `bun run start:dev` - Start in development mode
+- `bun run start:dev` - Start in development mode with watch
 - `bun run start:debug` - Start in debug mode
 - `bun run start:prod` - Start production version
 - `bun run lint` - Run code linting
@@ -144,19 +149,26 @@ bun run start:prod
 
 ### Tasks
 
-- `GET /tasks` - Get tasks list
+- `GET /tasks` - Get tasks list with filtering, sorting, and pagination
+  - Query params: `search`, `status`, `category`, `sortField`, `sortBy`, `page`, `limit`
 - `GET /tasks/:id` - Get task by ID
 - `POST /tasks` - Create new task
 - `PATCH /tasks/:id` - Update task
+- `PATCH /tasks/:id/toggle` - Toggle task completion status
 - `DELETE /tasks/:id` - Delete task
 
 ### Categories
 
-- `GET /categories` - Get categories list
+- `GET /categories` - Get all categories
 - `GET /categories/:id` - Get category by ID
 - `POST /categories` - Create new category
 - `PATCH /categories/:id` - Update category
 - `DELETE /categories/:id` - Delete category
+
+### Statistics
+
+- `GET /stats` - Get tasks statistics
+  - Returns: total tasks, completed, pending, overdue, completion rate, top categories
 
 ## 📝 DTO (Data Transfer Objects)
 
@@ -164,11 +176,11 @@ bun run start:prod
 
 ```typescript
 {
-  title: string;
-  description?: string;
-  priority?: number;
-  dueDate?: Date;
-  categoryId?: string;
+  title: string;           // Required, will be trimmed
+  description?: string;    // Optional, will be trimmed
+  priority?: number;       // 1-10, default: 5
+  dueDate?: string;       // ISO date string
+  categoryId?: string;    // Category ID
 }
 ```
 
@@ -176,12 +188,26 @@ bun run start:prod
 
 ```typescript
 {
-  title?: string;
-  description?: string;
-  priority?: number;
+  title?: string;          // Will be trimmed
+  description?: string;    // Will be trimmed
+  priority?: number;       // 1-10
   isDone?: boolean;
-  dueDate?: Date;
+  dueDate?: string;       // ISO date string
   categoryId?: string;
+}
+```
+
+### TaskQueryDto
+
+```typescript
+{
+  search?: string;        // Search in title/description
+  status?: 'done' | 'undone' | 'all';
+  category?: string;      // Filter by category name
+  sortField?: 'title' | 'category' | 'priority' | 'createdAt';
+  sortBy?: 'asc' | 'desc';
+  page?: number;          // Default: 1
+  limit?: number;         // Default: 10
 }
 ```
 
@@ -189,8 +215,8 @@ bun run start:prod
 
 ```typescript
 {
-  name: string;
-  color?: string;
+  name: string;           // Required, unique
+  color?: string;         // Hex color code
 }
 ```
 
@@ -217,10 +243,10 @@ bunx prisma migrate deploy
 # Reset database
 bunx prisma migrate reset
 
-# View database
+# View database in browser
 bunx prisma studio
 
-# Generate client
+# Generate Prisma client
 bunx prisma generate
 ```
 
@@ -244,15 +270,45 @@ bun run test:e2e
 
 ## 🔒 Security
 
-- Validation of all incoming data
-- SQL injection protection through Prisma
-- CORS configuration
+- Validation of all incoming data with class-validator
+- SQL injection protection through Prisma ORM
+- Input sanitization (trimming whitespace)
+- CORS configuration for cross-origin requests
+- Type-safe database queries
 - Ready for authentication and authorization
+
+## 🚀 Deployment
+
+### Recommended Platforms
+
+1. **Railway.app** - Easy deployment with PostgreSQL
+2. **Render.com** - Free tier with PostgreSQL support
+3. **Fly.io** - Fast deployment with databases
+4. **Vercel** - Serverless functions (with adaptations)
+
+### Environment Variables
+
+Required for production:
+
+```env
+DATABASE_URL="postgresql://..."
+PORT=4040
+NODE_ENV=production
+```
+
+### Deployment Steps
+
+1. Set up PostgreSQL database
+2. Configure environment variables
+3. Run migrations: `bunx prisma migrate deploy`
+4. Build: `bun run build`
+5. Start: `bun run start:prod`
 
 ## 📈 Monitoring & Logging
 
-- Built-in NestJS logging
-- Ready for monitoring system integration
+- Built-in NestJS logging system
+- Structured error handling
+- Ready for APM integration (New Relic, Datadog, etc.)
 - Health check endpoints
 
 ## 🤝 Contributing
